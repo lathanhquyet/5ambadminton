@@ -14,6 +14,10 @@ if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+// Global statement retainer to prevent Node 24 V8 GC from running
+// Statement::~Statement() destructor during runtime & triggering Assertion failed: (env) != nullptr
+const statementRetainer = new Set<any>();
+
 export const getDb = (dbFilePath?: string) => {
   const targetPath = dbFilePath || resolvedPath;
   const db = new Database(targetPath);
@@ -21,6 +25,13 @@ export const getDb = (dbFilePath?: string) => {
   // Enforce WAL mode and Foreign Key constraints
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  const originalPrepare = db.prepare.bind(db);
+  (db as any).prepare = (sql: string) => {
+    const stmt = originalPrepare(sql);
+    statementRetainer.add(stmt);
+    return stmt;
+  };
   
   return db;
 };
